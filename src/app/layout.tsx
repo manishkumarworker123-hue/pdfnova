@@ -41,9 +41,32 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
-      style={{ colorScheme: "dark" }} // defaults to dark color scheme
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
+      style={{ colorScheme: "dark" }}
+      suppressHydrationWarning
     >
+      {/* Anti-flicker script: runs before page paint to apply saved theme */}
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme');
+                  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  if (theme === 'light') {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.colorScheme = 'light';
+                  } else {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.colorScheme = 'dark';
+                  }
+                } catch(e) {}
+              })()
+            `
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground selection:bg-primary/20 selection:text-primary">
         <AuthProvider>
           <ThemeProvider>

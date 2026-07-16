@@ -30,7 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files — keep .env.local secret, track .env for reference only
+# env files — NEVER commit real API keys
+.env
+.env.*
 .env.local
 .env*.local
 
