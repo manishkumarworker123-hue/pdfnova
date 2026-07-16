@@ -4,19 +4,24 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Monetag Service Worker — must be served with no cache and full scope
 [[headers]]
   for = "/sw.js"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
     Service-Worker-Allowed = "/"
+    Content-Type = "application/javascript"
 
+# Security headers for all routes
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
+    X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
