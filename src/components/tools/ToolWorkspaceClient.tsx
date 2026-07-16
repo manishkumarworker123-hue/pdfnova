@@ -81,6 +81,13 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
   // Organize tool state
   const [pagesState, setPagesState] = useState<PageItemState[]>([]);
 
+  // Preload PDF.js script tag in background for tools requiring it
+  useEffect(() => {
+    if (["pdf-to-jpg", "pdf-to-word", "ocr-pdf"].includes(toolId)) {
+      loadPdfJs().catch(e => console.error("PDF.js background preload failed:", e));
+    }
+  }, [toolId]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle Drag & Drop
@@ -247,11 +254,12 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
 
       if (toolId === "merge-pdf") {
         const mergedPdf = await PDFDocument.create();
-        for (const fileItem of files) {
-          const buffer = await fileItem.file.arrayBuffer();
-          const srcDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+        const buffers = await Promise.all(files.map(fileItem => fileItem.file.arrayBuffer()));
+        for (let i = 0; i < files.length; i++) {
+          const srcDoc = await PDFDocument.load(buffers[i], { ignoreEncryption: true });
           const copiedPages = await mergedPdf.copyPages(srcDoc, srcDoc.getPageIndices());
           copiedPages.forEach((page) => mergedPdf.addPage(page));
+          setProgress(10 + Math.floor(((i + 1) / files.length) * 80));
         }
         const bytes = await mergedPdf.save();
         outputBlob = new Blob([bytes as any], { type: "application/pdf" });
@@ -369,8 +377,10 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
 
       else if (toolId === "jpg-to-pdf") {
         const newPdf = await PDFDocument.create();
-        for (const fileItem of files) {
-          const imgBuffer = await fileItem.file.arrayBuffer();
+        const imgBuffers = await Promise.all(files.map(f => f.file.arrayBuffer()));
+        for (let i = 0; i < files.length; i++) {
+          const fileItem = files[i];
+          const imgBuffer = imgBuffers[i];
           let embeddedImage;
           if (fileItem.name.toLowerCase().endsWith(".png")) {
             embeddedImage = await newPdf.embedPng(imgBuffer);
@@ -384,6 +394,7 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
             width: embeddedImage.width,
             height: embeddedImage.height
           });
+          setProgress(10 + Math.floor(((i + 1) / files.length) * 80));
         }
         const bytes = await newPdf.save();
         outputBlob = new Blob([bytes as any], { type: "application/pdf" });
@@ -398,19 +409,36 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
         const pdf = await loadingTask.promise;
 
         const zip = new JSZip();
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 1.5 });
-          const canvas = document.createElement("canvas");
-          const context = canvas.getContext("2d");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
+        
+        // Process rendering in chunks of 4 in parallel to balance memory and speed
+        const concurrencyLimit = 4;
+        const pageNumbers = Array.from({ length: pdf.numPages }, (_, idx) => idx + 1);
+        
+        for (let i = 0; i < pageNumbers.length; i += concurrencyLimit) {
+          const chunk = pageNumbers.slice(i, i + concurrencyLimit);
+          const chunkResults = await Promise.all(
+            chunk.map(async (pageNum) => {
+              const page = await pdf.getPage(pageNum);
+              const viewport = page.getViewport({ scale: 1.5 });
+              const canvas = document.createElement("canvas");
+              const context = canvas.getContext("2d");
+              if (!context) return null;
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              
+              await page.render({ canvasContext: context, viewport }).promise;
+              const imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+              return { pageNum, imgData };
+            })
+          );
           
-          await page.render({ canvasContext: context, viewport }).promise;
-          const imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
-          zip.file(`page_${i}.jpg`, imgData, { base64: true });
+          chunkResults.forEach((res) => {
+            if (res) {
+              zip.file(`page_${res.pageNum}.jpg`, res.imgData, { base64: true });
+            }
+          });
           
-          setProgress(10 + Math.floor((i / pdf.numPages) * 70));
+          setProgress(10 + Math.floor(((i + chunk.length) / pdf.numPages) * 70));
         }
 
         outputBlob = await zip.generateAsync({ type: "blob" });
@@ -424,15 +452,20 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
         const loadingTask = pdfjs.getDocument({ data: buffer });
         const pdf = await loadingTask.promise;
 
-        let fullText = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
+        // Parallelize text extraction since it's lightweight and doesn't require canvas rendering
+        const pageNumbers = Array.from({ length: pdf.numPages }, (_, idx) => idx + 1);
+        const pagePromises = pageNumbers.map(async (pageNum) => {
+          const page = await pdf.getPage(pageNum);
           const textContent = await page.getTextContent();
           const pageText = textContent.items.map((item: any) => item.str).join(" ");
-          fullText += `--- Page ${i} ---\n\n${pageText}\n\n`;
-          setProgress(10 + Math.floor((i / pdf.numPages) * 70));
-        }
+          return { pageNum, text: `--- Page ${pageNum} ---\n\n${pageText}\n\n` };
+        });
 
+        const results = await Promise.all(pagePromises);
+        results.sort((a, b) => a.pageNum - b.pageNum);
+        const fullText = results.map(r => r.text).join("");
+        
+        setProgress(80);
         outputBlob = await buildDocxBlob(fullText);
         finalName = `${primary.name.split(".")[0]}.docx`;
       }
@@ -516,20 +549,33 @@ export default function ToolWorkspaceClient({ toolId }: ToolWorkspaceClientProps
         const pdf = await loadingTask.promise;
 
         let fullOcrText = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2.0 });
-          const canvas = document.createElement("canvas");
-          const context = canvas.getContext("2d");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
+        // Process OCR in parallel chunks of 2 to optimize cpu core utilization safely
+        const concurrencyLimit = 2;
+        const pageNumbers = Array.from({ length: pdf.numPages }, (_, idx) => idx + 1);
+        const pageTexts = new Array(pdf.numPages);
+        
+        for (let i = 0; i < pageNumbers.length; i += concurrencyLimit) {
+          const chunk = pageNumbers.slice(i, i + concurrencyLimit);
+          await Promise.all(
+            chunk.map(async (pageNum) => {
+              const page = await pdf.getPage(pageNum);
+              const viewport = page.getViewport({ scale: 2.0 });
+              const canvas = document.createElement("canvas");
+              const context = canvas.getContext("2d");
+              if (!context) return;
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              
+              await page.render({ canvasContext: context, viewport }).promise;
+              const { data: { text } } = await Tesseract.recognize(canvas, ocrLanguage);
+              pageTexts[pageNum - 1] = `--- Page ${pageNum} ---\n\n${text}\n\n`;
+            })
+          );
           
-          await page.render({ canvasContext: context, viewport }).promise;
-          const { data: { text } } = await Tesseract.recognize(canvas, ocrLanguage);
-          fullOcrText += `--- Page ${i} ---\n\n${text}\n\n`;
-          setProgress(10 + Math.floor((i / pdf.numPages) * 80));
+          setProgress(10 + Math.floor(((i + chunk.length) / pdf.numPages) * 80));
         }
 
+        fullOcrText = pageTexts.join("");
         setExtractedText(fullOcrText);
         outputBlob = new Blob([fullOcrText], { type: "text/plain;charset=utf-8" });
         finalName = `${primary.name.split(".")[0]}_extracted_ocr.txt`;
