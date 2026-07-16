@@ -141,7 +141,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-muted-foreground">
           <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
           <ChevronRight className="w-3.5 h-3.5" />
-          <a href="/#tools" className="hover:text-foreground transition-colors">Tools</a>
+          <Link href="/#tools" className="hover:text-foreground transition-colors">Tools</Link>
           <ChevronRight className="w-3.5 h-3.5" />
           <span className="text-foreground font-semibold">{tool.name}</span>
         </nav>
