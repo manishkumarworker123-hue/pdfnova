@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // User Avatars and assets
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Temporary session upload directories (time-limited lifecycle deletes them)
+    match /temp/{sessionId}/{allPaths=**} {
+      allow read, write: if true; // allow uploads during anonymous compile runs
+    }
+
+    match /finished/{sessionId}/{allPaths=**} {
+      allow read, write: if true; // allow access to finished downloads
+    }
+  }
+}

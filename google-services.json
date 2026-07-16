@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "866055970592",
+    "project_id": "pdfnova-b4319",
+    "storage_bucket": "pdfnova-b4319.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:866055970592:android:7721094138536959924145",
+        "android_client_info": {
+          "package_name": "com.pdfnova.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "866055970592-7721094138536959924145.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjvbdgGHeYKfjtyBFKsDLiJ8m69-FzHhs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
