@@ -7,6 +7,7 @@
   NPM_FLAGS = "--legacy-peer-deps"
 
 
+
 # Monetag Service Worker — must be served with no cache and full scope
 [[headers]]
   for = "/sw.js"
