@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -13,20 +13,31 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
-// Singleton Firebase app initialization
+// Singleton Firebase app initialization — safe to call multiple times
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 const auth = getAuth(app);
 
-// Use the modern Firestore cache API (replaces deprecated enableIndexedDbPersistence)
-// persistentMultipleTabManager allows multiple browser tabs without conflicts
-const db = typeof window !== "undefined"
-  ? initializeFirestore(app, {
+// Firestore: use persistent cache only in browser, plain getFirestore on server
+// Guard against calling initializeFirestore twice (which throws an error)
+let db: ReturnType<typeof getFirestore>;
+
+if (typeof window !== "undefined") {
+  // Browser: try to initialize with persistent multi-tab cache
+  // If already initialized (e.g., HMR), fall back to getFirestore
+  try {
+    db = initializeFirestore(app, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager()
       })
-    })
-  : initializeFirestore(app, {});
+    });
+  } catch {
+    db = getFirestore(app);
+  }
+} else {
+  // Server/SSR: use standard Firestore (no IndexedDB persistence)
+  db = getFirestore(app);
+}
 
 const storage = getStorage(app);
 

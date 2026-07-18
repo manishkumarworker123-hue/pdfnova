@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Disallow private/auth pages from indexing
+Disallow: /auth/
+Disallow: /dashboard/
+
+Sitemap: https://pdfnova.netlify.app/sitemap.xml
